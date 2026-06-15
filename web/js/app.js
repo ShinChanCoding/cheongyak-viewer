@@ -85,27 +85,35 @@
     });
     return _kakaoReady;
   }
+  function mapErr(msg) {
+    return `<div class="map-err">🗺️ ${msg}</div>`;
+  }
   async function initMap(containerId, address) {
-    const key = await getKakaoKey();
-    if (!key) return false;
-    let kakao;
-    try { kakao = await loadKakao(key); } catch (e) { return false; }
     const el = document.getElementById(containerId);
-    if (!el) return false;
+    const key = await getKakaoKey();
+    if (!key) return "nokey";
+    let kakao;
+    try {
+      kakao = await loadKakao(key);
+    } catch (e) {
+      if (el) el.innerHTML = mapErr(`지도를 불러오지 못했습니다. 카카오 개발자 콘솔에서 <b>현재 도메인(${location.origin})</b>이 [앱 설정 → 플랫폼 → Web]에 등록·저장됐는지, 그리고 키가 <b>JavaScript 키</b>(REST API 키 아님)인지 확인하세요.`);
+      return "failed";
+    }
+    if (!el) return "failed";
     return new Promise((resolve) => {
-      const geo = new kakao.maps.services.Geocoder();
       const place = (x, y) => {
         const ll = new kakao.maps.LatLng(y, x);
         const map = new kakao.maps.Map(el, { center: ll, level: 4 });
         new kakao.maps.Marker({ map, position: ll });
-        resolve(true);
+        resolve("ok");
       };
+      const geo = new kakao.maps.services.Geocoder();
       geo.addressSearch(address, (res, status) => {
         if (status === kakao.maps.services.Status.OK && res[0]) { place(res[0].x, res[0].y); return; }
-        // 지번/도로명 매칭 실패 시 키워드 검색으로 폴백
         new kakao.maps.services.Places().keywordSearch(address, (r2, s2) => {
-          if (s2 === kakao.maps.services.Status.OK && r2[0]) place(r2[0].x, r2[0].y);
-          else resolve(false);
+          if (s2 === kakao.maps.services.Status.OK && r2[0]) { place(r2[0].x, r2[0].y); return; }
+          el.innerHTML = mapErr(`이 주소를 지도에서 찾지 못했습니다.<br>아래 "🗺️ 지도" 버튼으로 확인하세요.`);
+          resolve("failed");
         });
       });
     });
@@ -276,7 +284,7 @@
     }
     box.innerHTML = renderDetail(n, units);
     if (mapAddr(n)) {
-      initMap("mdMap", mapAddr(n)).then((ok) => { if (!ok) { const w = $("#mdMapWrap"); if (w) w.remove(); } });
+      initMap("mdMap", mapAddr(n)).then((st) => { if (st === "nokey") { const w = $("#mdMapWrap"); if (w) w.remove(); } });
     }
   }
 

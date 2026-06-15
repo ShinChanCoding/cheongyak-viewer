@@ -167,6 +167,8 @@ a { color: inherit; }
 
 /* 지도 임베드 */
 .md-map { width: 100%; height: 220px; border-radius: var(--r-sm); border: 1px solid var(--line); overflow: hidden; }
+.map-err { padding: 16px; font-size: 12.5px; line-height: 1.6; color: var(--muted); background: var(--surface-2); height: 100%; display: flex; align-items: center; }
+.map-err b { color: var(--ink-2); }
 .cat { color: #fff; font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: var(--r-pill); letter-spacing: -.01em; }
 .src { font-size: 11px; font-weight: 700; color: var(--muted); border: 1px solid var(--line-2); padding: 3px 9px; border-radius: var(--r-pill); }
 .kind { font-size: 11px; font-weight: 800; background: #fdeaea; color: #c5302f; padding: 3px 9px; border-radius: var(--r-pill); }
