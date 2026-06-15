@@ -193,106 +193,111 @@
     return `${(+m[1]).toFixed(2)}㎡${m[2] ? " " + m[2] : ""}`;
   }
 
-  // ----- 상세 모달 -----
+  // ----- 상세 모달 (Level 2: 전체 내용 / Level 3: 평형·공고문 세부) -----
   async function openDetail(id) {
     const n = state.all.find((x) => x.id === id);
     if (!n) return;
     const box = $("#modalBody");
     $("#modal").hidden = false;
     document.body.style.overflow = "hidden";
-    box.innerHTML = `<div class="md-head"><span class="cat" style="background:${CAT_COLORS[n.category] || "#475569"}">${n.category}</span>
+    box.innerHTML = `<div class="md-head"><div class="md-tags"><span class="cat" style="background:${CAT_COLORS[n.category] || "#475569"}">${n.category}</span></div>
       <h2>${n.title}</h2></div><p class="empty">상세 정보를 불러오는 중…</p>`;
     let units = [];
-    try {
-      const res = await fetch(`/api/applyhome-detail?hm=${encodeURIComponent(n.hm)}&pb=${encodeURIComponent(n.pb)}`);
-      units = (await res.json()).units || [];
-    } catch (e) { /* 무시 */ }
+    if (n.source === "청약홈" && n.hm) {
+      try {
+        const res = await fetch(`/api/applyhome-detail?hm=${encodeURIComponent(n.hm)}&pb=${encodeURIComponent(n.pb)}`);
+        units = (await res.json()).units || [];
+      } catch (e) { /* 무시 */ }
+    }
     box.innerHTML = renderDetail(n, units);
   }
 
   function renderDetail(n, units) {
-    const totalUnits = units.reduce((s, u) => s + (u.units || 0), 0);
+    const sumUnits = units.reduce((s, u) => s + (u.units || 0), 0);
     const prices = units.map((u) => u.price).filter(Boolean);
     const priceRange = prices.length
       ? (Math.min(...prices) === Math.max(...prices) ? fmtPrice(prices[0]) : `${fmtPrice(Math.min(...prices))} ~ ${fmtPrice(Math.max(...prices))}`)
-      : "-";
+      : "";
+    // 특별공급: 평형별 합계 우선, 없으면 notice.special 칩
     const spSum = {};
     units.forEach((u) => Object.entries(u.sp || {}).forEach(([k, v]) => (spSum[k] = (spSum[k] || 0) + v)));
-    const spChips = Object.entries(spSum).filter(([, v]) => v > 0).map(([k, v]) => `<span class="chip">${k} ${v}세대</span>`).join("");
+    let spChips = Object.entries(spSum).filter(([, v]) => v > 0).map(([k, v]) => `<span class="chip">${k} ${v}세대</span>`).join("");
+    if (!spChips && (n.special || []).length) spChips = n.special.map((s) => `<span class="chip">${s}</span>`).join("");
 
-    const rows = units.length ? units.map((u) => `
-      <tr><td class="t">${fmtType(u.type)}</td><td>${u.units || "-"}세대</td>
-      <td class="p">${fmtPrice(u.price)}</td></tr>`).join("") : "";
+    const totalUnits = sumUnits || n.totalUnits || "";
+    const priceBanner = priceRange
+      ? `<div class="md-price"><span class="md-price-lbl">분양가 (최고가 기준)</span><b>${priceRange}</b></div>`
+      : (n.priceNote ? `<div class="md-price"><span class="md-price-lbl">공급 정보</span><b>${n.priceNote}</b></div>` : "");
+
+    const milestones = [
+      ["당첨자 발표", n.winnerDate],
+      ["계약", n.contractStart ? n.contractStart + (n.contractEnd ? ` ~ ${n.contractEnd}` : "") : ""],
+      ["입주 예정", n.moveInDate],
+    ].filter(([, v]) => v);
+    const msHtml = milestones.length
+      ? `<div class="dates">${milestones.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join("")}</div>` : "";
+
+    const rows = units.map((u) => `<tr><td class="t">${fmtType(u.type)}</td><td>${u.units || "-"}세대</td><td class="p">${fmtPrice(u.price)}</td></tr>`).join("");
+    const docBtn = n.docUrl ? `<a class="act-btn" href="/api/doc?url=${encodeURIComponent(n.docUrl)}" target="_blank" rel="noopener">📄 공고문 PDF</a>` : "";
 
     return `
       <div class="md-head">
         <div class="md-tags"><span class="cat" style="background:${CAT_COLORS[n.category] || "#475569"}">${n.category}</span>
-          <span class="src">${n.source}</span></div>
+          <span class="src">${n.source}</span>${/무순위/.test(n.supplyKind || "") ? '<span class="kind">무순위</span>' : ""}</div>
         <h2>${n.title}</h2>
-        <p class="md-sub">📍 ${n.address || n.region || "-"} · 🏢 ${n.supplier || "-"}</p>
+        <p class="md-sub">📍 ${n.address || n.region || "-"}${n.supplier ? ` · 🏢 ${n.supplier}` : ""}</p>
       </div>
-
-      ${prices.length ? `<div class="md-price"><span class="md-price-lbl">분양가 (최고가 기준)</span><b>${priceRange}</b></div>` : ""}
+      ${priceBanner}
       <div class="md-stats two">
-        <div><b>${totalUnits || n.totalUnits || "-"}세대</b><span>총 공급세대</span></div>
+        <div><b>${totalUnits ? totalUnits + "세대" : "-"}</b><span>총 공급세대</span></div>
         <div><b>${n.recruitDate || "-"}</b><span>모집공고일</span></div>
       </div>
-
+      <h3 class="md-h3">📌 청약 일정</h3>
       ${scheduleBlock(n)}
-
+      ${msHtml}
       ${units.length ? `<h3 class="md-h3">🏘️ 주택형별 분양가</h3>
         <div class="md-table-wrap"><table class="md-table">
           <thead><tr><th>주택형(전용)</th><th>공급세대</th><th>분양가</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table></div>` : `<p class="empty" style="padding:18px 0">주택형별 상세 정보가 없습니다.</p>`}
-
+          <tbody>${rows}</tbody></table></div>` : ""}
       ${spChips ? `<h3 class="md-h3">🎯 특별공급 물량</h3><div class="chips">${spChips}</div>` : ""}
-
       <div class="md-actions">
-        <a class="apply-btn" href="${n.url}" target="_blank" rel="noopener">청약홈 원문 보기 ↗</a>
+        <a class="apply-btn" href="${n.url}" target="_blank" rel="noopener">신청 / 공고 바로가기 ↗</a>
+        ${docBtn}
         ${mapAddr(n) ? `<a class="act-btn" href="https://map.naver.com/p/search/${encodeURIComponent(mapAddr(n))}" target="_blank" rel="noopener">🗺️ 지도</a>` : ""}
       </div>`;
   }
 
   function closeModal() { $("#modal").hidden = true; document.body.style.overflow = ""; }
 
+  // 지역 축약 (시/도 + 시군구)
+  function regionShort(n) {
+    const r = (n.region || "").trim();
+    if (!r) return "-";
+    return r.split(/\s+/).slice(0, 2).join(" ");
+  }
+
+  // Level 1: 컴팩트 카드 (핵심만, 클릭하면 상세 모달)
   function card(n) {
     const st = statusOf(n);
     const color = CAT_COLORS[n.category] || "#475569";
-    const sp = (n.special || []).slice(0, 5).map((s) => `<span class="chip">${s}</span>`).join("");
-    const kindTag = n.supplyKind && n.supplyKind !== "정식청약"
-      ? `<span class="kind">${n.supplyKind}</span>` : "";
+    const kindTag = /무순위/.test(n.supplyKind || "") ? `<span class="kind">무순위</span>` : "";
     return `
-      <article class="card">
+      <article class="card" data-detail="${n.id}" role="button" tabindex="0">
         <div class="card-top">
           <span class="cat" style="background:${color}">${n.category}</span>
-          <span class="src">${n.source}</span>
           ${kindTag}
           <span class="status ${st.cls}">${st.label}</span>
-          <span class="dday">${ddayLabel(n)}</span>
+          ${st.key !== "closed" ? `<span class="dday">${ddayLabel(n)}</span>` : ""}
         </div>
         <h3 class="card-title">${n.title || "(제목 없음)"}</h3>
-        <div class="card-meta">
-          <span>📍 ${n.region || "-"}</span>
-          <span>🏢 ${n.supplier || "-"}</span>
+        <div class="card-sub">
+          <span>📍 ${regionShort(n)}</span>
           ${n.totalUnits ? `<span>🏠 ${n.totalUnits}세대</span>` : ""}
           ${n.type ? `<span>🏷️ ${n.type}</span>` : ""}
         </div>
-        ${n.priceNote ? `<div class="price">💰 ${n.priceNote}</div>` : ""}
-        ${scheduleBlock(n)}
-        <div class="dates">
-          <div><b>모집공고</b><span>${n.recruitDate || "-"}</span></div>
-          <div><b>당첨발표</b><span>${n.winnerDate || "-"}</span></div>
-          <div><b>계약</b><span>${n.contractStart || "-"}${n.contractEnd ? " ~ " + n.contractEnd : ""}</span></div>
-          <div><b>입주예정</b><span>${n.moveInDate || "-"}</span></div>
-        </div>
-        ${sp ? `<div class="chips">${sp}</div>` : ""}
-        <div class="card-actions">
-          <a class="apply-btn" href="${n.url}" target="_blank" rel="noopener">신청/공고 바로가기 ↗</a>
-        </div>
-        <div class="card-actions sub">
-          ${docButton(n)}
-          ${mapAddr(n) ? `<a class="act-btn" href="https://map.naver.com/p/search/${encodeURIComponent(mapAddr(n))}" target="_blank" rel="noopener">🗺️ 지도</a>` : ""}
+        <div class="card-foot">
+          <span class="cf-meta">${n.source}${n.applyEnd ? " · 마감 " + md(n.applyEnd) : ""}</span>
+          <span class="chev">자세히 ›</span>
         </div>
       </article>`;
   }
@@ -659,7 +664,11 @@
       if (btn) { e.preventDefault(); openDetail(btn.dataset.detail); }
       if (e.target.closest("[data-close]")) closeModal();
     });
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeModal();
+      const c = e.target.closest && e.target.closest("[data-detail]");
+      if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDetail(c.dataset.detail); }
+    });
     loadNotices();
   }
 
