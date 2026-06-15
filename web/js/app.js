@@ -5,7 +5,7 @@
   const state = {
     all: [],
     sources: {},
-    filter: { source: "all", category: "all", q: "", onlyOpen: false, sort: "deadline", stage: "all", region: "all" },
+    filter: { source: "all", category: "all", q: "", onlyOpen: false, sort: "deadline", stage: "all", region: "all", favOnly: false },
     view: "list",
   };
 
@@ -64,6 +64,61 @@
   function mapAddr(n) {
     const a = n.address || n.region || "";
     return a && a.length > 3 ? a : "";
+  }
+
+  // ----- 카카오 지도 임베드 (키 있을 때만) -----
+  let _kakaoKey, _kakaoReady;
+  async function getKakaoKey() {
+    if (_kakaoKey !== undefined) return _kakaoKey;
+    try { _kakaoKey = (await (await fetch("/api/config")).json()).kakaoJsKey || ""; }
+    catch (e) { _kakaoKey = ""; }
+    return _kakaoKey;
+  }
+  function loadKakao(key) {
+    if (_kakaoReady) return _kakaoReady;
+    _kakaoReady = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${key}&autoload=false&libraries=services`;
+      s.onload = () => window.kakao.maps.load(() => resolve(window.kakao));
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    return _kakaoReady;
+  }
+  async function initMap(containerId, address) {
+    const key = await getKakaoKey();
+    if (!key) return false;
+    let kakao;
+    try { kakao = await loadKakao(key); } catch (e) { return false; }
+    const el = document.getElementById(containerId);
+    if (!el) return false;
+    return new Promise((resolve) => {
+      const geo = new kakao.maps.services.Geocoder();
+      const place = (x, y) => {
+        const ll = new kakao.maps.LatLng(y, x);
+        const map = new kakao.maps.Map(el, { center: ll, level: 4 });
+        new kakao.maps.Marker({ map, position: ll });
+        resolve(true);
+      };
+      geo.addressSearch(address, (res, status) => {
+        if (status === kakao.maps.services.Status.OK && res[0]) { place(res[0].x, res[0].y); return; }
+        // 지번/도로명 매칭 실패 시 키워드 검색으로 폴백
+        new kakao.maps.services.Places().keywordSearch(address, (r2, s2) => {
+          if (s2 === kakao.maps.services.Status.OK && r2[0]) place(r2[0].x, r2[0].y);
+          else resolve(false);
+        });
+      });
+    });
+  }
+
+  // ----- 관심공고 즐겨찾기 (브라우저 저장) -----
+  const FAV_KEY = "apt_favs";
+  function getFavs() { try { return JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch (e) { return []; } }
+  function isFav(id) { return getFavs().includes(id); }
+  function toggleFav(id) {
+    const f = getFavs(), i = f.indexOf(id);
+    if (i >= 0) f.splice(i, 1); else f.push(id);
+    localStorage.setItem(FAV_KEY, JSON.stringify(f));
   }
   function regionsInData() {
     const set = {};
@@ -128,6 +183,7 @@
       arr = arr.filter((n) => (n.title + n.region + n.supplier + n.type).toLowerCase().includes(q));
     }
     if (f.onlyOpen) arr = arr.filter((n) => statusOf(n).key !== "closed");
+    if (f.favOnly) { const favs = getFavs(); arr = arr.filter((n) => favs.includes(n.id)); }
     if (f.stage !== "all") {
       arr = arr.filter((n) => (n.schedule || []).some(
         (x) => x.label === f.stage && statusOfRange(x.start, x.end).key !== "closed"));
@@ -208,8 +264,20 @@
         const res = await fetch(`/api/applyhome-detail?hm=${encodeURIComponent(n.hm)}&pb=${encodeURIComponent(n.pb)}`);
         units = (await res.json()).units || [];
       } catch (e) { /* 무시 */ }
+    } else if (n.source === "LH" && n.lhKey) {
+      // LH 상세는 여기서 지연 로딩 (목록 속도 개선)
+      try {
+        const res = await fetch("/api/lh-detail?" + new URLSearchParams(n.lhKey).toString());
+        const d = (await res.json()).detail || {};
+        ["totalUnits", "priceNote", "winnerDate", "contractStart", "contractEnd", "moveInDate", "docUrl", "address"]
+          .forEach((k) => { if (d[k]) n[k] = d[k]; });
+        if (d.schedule && d.schedule.length) n.schedule = d.schedule;
+      } catch (e) { /* 무시 */ }
     }
     box.innerHTML = renderDetail(n, units);
+    if (mapAddr(n)) {
+      initMap("mdMap", mapAddr(n)).then((ok) => { if (!ok) { const w = $("#mdMapWrap"); if (w) w.remove(); } });
+    }
   }
 
   function renderDetail(n, units) {
@@ -260,6 +328,7 @@
           <thead><tr><th>주택형(전용)</th><th>공급세대</th><th>분양가</th></tr></thead>
           <tbody>${rows}</tbody></table></div>` : ""}
       ${spChips ? `<h3 class="md-h3">🎯 특별공급 물량</h3><div class="chips">${spChips}</div>` : ""}
+      ${mapAddr(n) ? `<div id="mdMapWrap"><h3 class="md-h3">🗺️ 위치</h3><div id="mdMap" class="md-map"></div></div>` : ""}
       <div class="md-actions">
         <a class="apply-btn" href="${n.url}" target="_blank" rel="noopener">신청 / 공고 바로가기 ↗</a>
         ${docBtn}
@@ -296,7 +365,10 @@
           ${n.type ? `<span>🏷️ ${n.type}</span>` : ""}
         </div>
         <div class="card-foot">
-          <span class="cf-meta">${n.source}${n.applyEnd ? " · 마감 " + md(n.applyEnd) : ""}</span>
+          <span class="cf-left">
+            <button class="fav ${isFav(n.id) ? "on" : ""}" data-fav="${n.id}" aria-label="관심공고" title="관심공고">${isFav(n.id) ? "★" : "☆"}</button>
+            <span class="cf-meta">${n.source}${n.applyEnd ? " · 마감 " + md(n.applyEnd) : ""}</span>
+          </span>
           <span class="chev">자세히 ›</span>
         </div>
       </article>`;
@@ -329,6 +401,7 @@
             <input id="search" class="search" type="search" placeholder="단지명·지역·사업주체 검색" value="${f.q}">
           </div>
           <label class="chkopen"><input type="checkbox" id="onlyOpen" ${f.onlyOpen ? "checked" : ""}> <span>접수중만</span></label>
+          <button id="favToggle" class="favbtn ${f.favOnly ? "active" : ""}">${f.favOnly ? "★" : "☆"} 관심${getFavs().length ? ` ${getFavs().length}` : ""}</button>
           <select id="stage" class="sel">
             ${["all:전체 단계", "특별공급:특별공급 진행", "1순위:1순위 진행", "2순위:2순위 진행"].map((s) => {
               const [v, l] = s.split(":");
@@ -643,6 +716,8 @@
     if (sort) sort.onchange = (e) => { state.filter.sort = e.target.value; render(); };
     const stage = $("#stage");
     if (stage) stage.onchange = (e) => { state.filter.stage = e.target.value; render(); };
+    const favT = $("#favToggle");
+    if (favT) favT.onclick = () => { state.filter.favOnly = !state.filter.favOnly; render(); };
   }
 
   function restoreFocus(sel) {
@@ -660,6 +735,8 @@
     $("#refreshBtn").onclick = loadNotices;
     // 공고 상세보기 버튼 (이벤트 위임)
     document.addEventListener("click", (e) => {
+      const fav = e.target.closest("[data-fav]");
+      if (fav) { e.preventDefault(); e.stopPropagation(); toggleFav(fav.dataset.fav); render(); return; }
       const btn = e.target.closest("[data-detail]");
       if (btn) { e.preventDefault(); openDetail(btn.dataset.detail); }
       if (e.target.closest("[data-close]")) closeModal();

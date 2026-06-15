@@ -2,5 +2,6 @@
   "_comment": "공공데이터포털(data.go.kr)에서 발급받은 서비스키를 넣고 이 파일을 config.json 으로 복사하세요. 키가 없으면 서버는 자동으로 data/ 폴더의 샘플 데이터를 사용합니다.",
   "applyhome_service_key": "",
   "lh_service_key": "",
+  "kakao_js_key": "",
   "port": 8000
 }

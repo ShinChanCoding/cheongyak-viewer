@@ -15,6 +15,7 @@
 import json
 import os
 import sys
+import time
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -22,6 +23,19 @@ import socketserver
 import http.server
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+
+# 간단한 메모리 캐시 (속도 개선): key -> (만료시각, 값)
+_cache = {}
+
+
+def cached(key, ttl, fn):
+    now = time.time()
+    hit = _cache.get(key)
+    if hit and now < hit[0]:
+        return hit[1]
+    val = fn()
+    _cache[key] = (now + ttl, val)
+    return val
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
@@ -43,7 +57,7 @@ _lh_detail_cache = {}
 # 설정 로드
 # ---------------------------------------------------------------------------
 def load_config():
-    cfg = {"applyhome_service_key": "", "lh_service_key": "", "port": 8000}
+    cfg = {"applyhome_service_key": "", "lh_service_key": "", "kakao_js_key": "", "port": 8000}
     path = os.path.join(BASE_DIR, "config.json")
     if os.path.exists(path):
         try:
@@ -54,6 +68,7 @@ def load_config():
     # 환경변수 우선
     cfg["applyhome_service_key"] = os.environ.get("APPLYHOME_SERVICE_KEY", cfg["applyhome_service_key"])
     cfg["lh_service_key"] = os.environ.get("LH_SERVICE_KEY", cfg["lh_service_key"])
+    cfg["kakao_js_key"] = os.environ.get("KAKAO_JS_KEY", cfg.get("kakao_js_key", ""))
     return cfg
 
 
@@ -341,7 +356,7 @@ def fetch_lh(per_page=100, keep=60):
         }
         url = LH_URL + "/lhLeaseNoticeInfo1?" + urllib.parse.urlencode(params, safe="%+")
         rows = extract_lh_list(http_get_json(url))
-        out, raw_by_id = [], {}
+        out = []
         NON_HOUSING = ("어린이집", "상가", "주차장", "창고", "공장", "토지", "단지내")
         for r in rows:
             upp = str(r.get("UPP_AIS_TP_NM", ""))
@@ -351,42 +366,15 @@ def fetch_lh(per_page=100, keep=60):
                 continue
             if any(w in tp for w in NON_HOUSING):
                 continue
-            n = normalize_lh(r)
-            out.append(n)
-            raw_by_id[n["id"]] = r
+            out.append(normalize_lh(r))
         out = [n for n in out if n.get("title")]
         out.sort(key=lambda n: n.get("recruitDate", ""), reverse=True)
         out = out[:keep]
-        enrich_lh_details(out, raw_by_id)   # 상세(접수일정·세대수·임대조건) 보강 (권한 있을 때만)
+        # 상세(세대수·일정·임대조건)는 모달 열 때 /api/lh-detail 로 지연 로딩 -> 목록 빠름
         return (out, "live") if out else (load_sample("sample_lh.json"), "sample")
     except Exception as e:
         print(f"[warn] LH API 호출 실패 -> 샘플 사용: {e}")
         return load_sample("sample_lh.json"), "sample"
-
-
-def enrich_lh_details(notices, raw_by_id):
-    """각 공고를 상세 API로 보강. 권한 없으면(403/401) 첫 호출에서 감지해 전체 스킵."""
-    if LH_DETAIL_DISABLED or not notices:
-        return
-    targets = [n for n in notices if n["id"] in raw_by_id]
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        list(ex.map(lambda n: _apply_lh_detail(n, raw_by_id[n["id"]]), targets))
-
-
-def _apply_lh_detail(notice, raw):
-    d = fetch_lh_detail(raw)
-    if not d:
-        return
-    for k in ("totalUnits", "priceNote", "winnerDate", "contractStart", "contractEnd", "moveInDate", "docUrl", "address"):
-        if d.get(k):
-            notice[k] = d[k]
-    if d.get("schedule"):
-        notice["schedule"] = d["schedule"]
-        s, e = _span([x for x in d["schedule"] if x["label"] == "청약 접수"] or d["schedule"])
-        if s:
-            notice["applyStart"] = s
-        if e:
-            notice["applyEnd"] = e
 
 
 def fetch_lh_detail(raw):
@@ -548,6 +536,11 @@ def normalize_lh(r):
         "statusText": g("PAN_SS"),
         "schedule": ([{"label": "공고~마감", "start": recruit, "end": close}] if close else []),
         "special": [],
+        # 상세는 모달 열 때 /api/lh-detail 로 지연 로딩 (목록 속도 개선)
+        "lhKey": {
+            "pan": str(g("PAN_ID")), "ccr": str(g("CCR_CNNT_SYS_DS_CD")),
+            "upp": str(g("UPP_AIS_TP_CD")), "ais": str(g("AIS_TP_CD")), "spl": str(g("SPL_INF_TP_CD")),
+        },
     }
 
 
@@ -602,13 +595,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "lh_key": bool(CONFIG.get("lh_service_key")),
             })
             return
+        if parsed.path == "/api/config":
+            self._send_json({"kakaoJsKey": CONFIG.get("kakao_js_key", "")})
+            return
         if parsed.path == "/api/applyhome-detail":
             qs = urllib.parse.parse_qs(parsed.query)
             try:
-                units = fetch_applyhome_mdl(qs.get("hm", [""])[0], qs.get("pb", [""])[0])
+                hm, pb = qs.get("hm", [""])[0], qs.get("pb", [""])[0]
+                units = cached("ah-mdl:" + hm + ":" + pb, 1800, lambda: fetch_applyhome_mdl(hm, pb))
                 self._send_json({"units": units})
             except Exception as e:
                 self._send_json({"units": [], "error": str(e)}, 502)
+            return
+        if parsed.path == "/api/lh-detail":
+            qs = urllib.parse.parse_qs(parsed.query)
+            raw = {
+                "PAN_ID": qs.get("pan", [""])[0], "CCR_CNNT_SYS_DS_CD": qs.get("ccr", [""])[0],
+                "UPP_AIS_TP_CD": qs.get("upp", [""])[0], "AIS_TP_CD": qs.get("ais", [""])[0],
+                "SPL_INF_TP_CD": qs.get("spl", [""])[0],
+            }
+            try:
+                self._send_json({"detail": fetch_lh_detail(raw) or {}})
+            except Exception as e:
+                self._send_json({"detail": {}, "error": str(e)}, 502)
             return
         if parsed.path == "/api/doc":
             self._serve_doc(urllib.parse.parse_qs(parsed.query).get("url", [""])[0])
@@ -618,11 +627,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             source = (qs.get("source", ["all"])[0]).lower()
             items, sources = [], {}
             if source in ("all", "applyhome"):
-                ah, ah_src = fetch_applyhome()
+                ah, ah_src = cached("notices:applyhome", 600, fetch_applyhome)
                 items += ah
                 sources["applyhome"] = ah_src
             if source in ("all", "lh"):
-                lh, lh_src = fetch_lh()
+                lh, lh_src = cached("notices:lh", 600, fetch_lh)
                 items += lh
                 sources["lh"] = lh_src
             self._send_json({"items": items, "sources": sources, "count": len(items)})
