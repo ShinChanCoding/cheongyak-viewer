@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: cheongyak-viewer
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python server.py"
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.4"
+      - key: APPLYHOME_SERVICE_KEY
+        sync: false   # Render 대시보드에서 직접 입력 (비밀값)
+      - key: LH_SERVICE_KEY
+        sync: false   # Render 대시보드에서 직접 입력 (비밀값)
