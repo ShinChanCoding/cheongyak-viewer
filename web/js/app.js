@@ -290,21 +290,37 @@
   }
 
   // ----- 상세 모달 (Level 2: 전체 내용 / Level 3: 평형·공고문 세부) -----
+  function initDetailMap(n) {
+    const addr = (n._danjis && n._danjis.length) ? (n._danjis[0].address || mapAddr(n)) : mapAddr(n);
+    if (addr && $("#mdMap")) {
+      initMap("mdMap", addr).then((st) => { if (st === "nokey") { const w = $("#mdMapWrap"); if (w) w.remove(); } });
+    }
+  }
+
   async function openDetail(id) {
     const n = state.all.find((x) => x.id === id);
     if (!n) return;
+    _openN = n;
     const box = $("#modalBody");
     $("#modal").hidden = false;
     document.body.style.overflow = "hidden";
-    box.innerHTML = `<div class="md-head"><div class="md-tags"><span class="cat" style="background:${CAT_COLORS[n.category] || "#475569"}">${n.category}</span></div>
-      <h2>${n.title}</h2></div><p class="empty">상세 정보를 불러오는 중…</p>`;
-    let units = [];
+    const modalBox = $(".modal-box"); if (modalBox) modalBox.scrollTop = 0;
+
+    const needDetail = (n.source === "청약홈" && n.hm) || (n.source === "LH" && n.lhKey);
+    // 1) 즉시 렌더 (이미 아는 정보로) — 모달이 바로 뜸
+    n._loading = needDetail && !n._loaded;
+    box.innerHTML = renderDetail(n, n._ahUnits || []);
+    initDetailMap(n);
+    if (!needDetail || n._loaded) return;
+
+    // 2) 상세는 백그라운드로 로드
+    let units = n._ahUnits || [];
     if (n.source === "청약홈" && n.hm) {
       try {
         const res = await fetch(`/api/applyhome-detail?hm=${encodeURIComponent(n.hm)}&pb=${encodeURIComponent(n.pb)}`);
         units = (await res.json()).units || [];
+        n._ahUnits = units;
       } catch (e) { /* 무시 */ }
-      // 접수 마감된 공고는 경쟁률도 조회
       if (statusOf(n).key === "closed" && !n.cmpet) {
         try {
           const r2 = await fetch(`/api/applyhome-cmpet?hm=${encodeURIComponent(n.hm)}&pb=${encodeURIComponent(n.pb)}`);
@@ -312,7 +328,6 @@
         } catch (e) { /* 무시 */ }
       }
     } else if (n.source === "LH" && n.lhKey) {
-      // LH 상세는 여기서 지연 로딩 (목록 속도 개선)
       try {
         const res = await fetch("/api/lh-detail?" + new URLSearchParams(n.lhKey).toString());
         const j = await res.json();
@@ -324,12 +339,12 @@
         n.danjis = d.danjis || [];
       } catch (e) { /* 무시 */ }
     }
-    _openN = n;
+    n._loaded = true;
+    n._loading = false;
+    // 3) 그 사이 다른 공고를 열었거나 모달을 닫았으면 갱신하지 않음
+    if (_openN !== n || $("#modal").hidden) return;
     box.innerHTML = renderDetail(n, units);
-    const mapAddress = (n._danjis && n._danjis.length) ? (n._danjis[0].address || mapAddr(n)) : mapAddr(n);
-    if (mapAddress && $("#mdMap")) {
-      initMap("mdMap", mapAddress).then((st) => { if (st === "nokey") { const w = $("#mdMapWrap"); if (w) w.remove(); } });
-    }
+    initDetailMap(n);
   }
 
   // 금액 셀: 숫자면 포맷, "공고문 참조" 등 텍스트면 PDF 링크로
@@ -439,6 +454,7 @@
       <h3 class="md-h3">📌 청약 일정</h3>
       ${scheduleBlock(n)}
       ${msHtml}
+      ${n._loading ? `<p class="md-loading"><span class="spin"></span> 면적별 금액·위치 불러오는 중…</p>` : ""}
       ${units.length ? `<h3 class="md-h3">🏘️ 주택형별 분양가</h3>
         <div class="md-table-wrap"><table class="md-table">
           <thead><tr><th>주택형(전용)</th><th>공급세대</th><th>분양가</th></tr></thead>

@@ -350,6 +350,9 @@ a { color: inherit; }
 .danji-tab:hover { border-color: var(--primary); color: var(--primary); }
 .danji-tab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
 .danji-addr { font-size: 13px; color: var(--ink-2); font-weight: 600; margin: 0 0 10px; }
+.md-loading { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); background: var(--surface-2); border-radius: var(--r-sm); padding: 14px; margin: 16px 0 0; }
+.spin { width: 15px; height: 15px; border: 2px solid var(--line-2); border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .md-table th:nth-child(2), .md-table td:nth-child(2) { text-align: center; }
 .md-table th:nth-child(3) { text-align: right; }
 .md-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
