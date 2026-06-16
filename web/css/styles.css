@@ -344,9 +344,9 @@ a { color: inherit; }
 .cmpet-tbl td.p.under { color: var(--muted); font-weight: 600; }
 .md-table th:nth-child(2), .md-table td:nth-child(2) { text-align: center; }
 .md-table th:nth-child(3) { text-align: right; }
-.md-actions { display: flex; gap: 8px; margin-top: 22px; }
-.md-actions .apply-btn { flex: 1; }
-.md-actions .act-btn { flex: 0 0 auto; padding: 12px 18px; }
+.md-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.md-actions .apply-btn { flex: 1 1 100%; white-space: nowrap; }      /* 주 버튼: 한 줄 전체 폭, 줄바꿈 금지 */
+.md-actions .act-btn { flex: 1 1 0; min-width: 0; padding: 11px 12px; white-space: nowrap; text-align: center; }  /* 보조 버튼: 아래 줄에 균등 분할 */
 
 /* ---------- Footer ---------- */
 .footer { border-top: 1px solid var(--line); background: var(--surface); padding: 20px; text-align: center; }
