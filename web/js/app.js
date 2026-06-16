@@ -100,6 +100,15 @@
       return "failed";
     }
     if (!el) return "failed";
+    // 주소 정리: 괄호·"일원/일대/번지 일원" 등 제거해 지오코딩 성공률↑
+    const clean = String(address)
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/\s*(일원|일대|일대지역|번지\s*일원|번지|등)\s*$/g, " ")
+      .replace(/\s{2,}/g, " ").trim();
+    const cands = [clean, address].filter((v, i, a) => v && a.indexOf(v) === i);
+    const OK = kakao.maps.services.Status.OK;
+    const geo = new kakao.maps.services.Geocoder();
+    const places = new kakao.maps.services.Places();
     return new Promise((resolve) => {
       const place = (x, y) => {
         const ll = new kakao.maps.LatLng(y, x);
@@ -107,15 +116,23 @@
         new kakao.maps.Marker({ map, position: ll });
         resolve("ok");
       };
-      const geo = new kakao.maps.services.Geocoder();
-      geo.addressSearch(address, (res, status) => {
-        if (status === kakao.maps.services.Status.OK && res[0]) { place(res[0].x, res[0].y); return; }
-        new kakao.maps.services.Places().keywordSearch(address, (r2, s2) => {
-          if (s2 === kakao.maps.services.Status.OK && r2[0]) { place(r2[0].x, r2[0].y); return; }
-          el.innerHTML = mapErr(`이 주소를 지도에서 찾지 못했습니다.<br>아래 "🗺️ 지도" 버튼으로 확인하세요.`);
-          resolve("failed");
+      let i = 0;
+      const tryAddr = () => {
+        if (i >= cands.length) { tryKeyword(0); return; }
+        geo.addressSearch(cands[i++], (r, s) => {
+          if (s === OK && r[0]) place(r[0].x, r[0].y); else tryAddr();
         });
-      });
+      };
+      const tryKeyword = (k) => {
+        if (k >= cands.length) {
+          el.innerHTML = mapErr(`이 공고는 주소 정보가 정확하지 않아 지도에 표시할 수 없습니다.<br>아래 "지도" 버튼으로 확인해 주세요.`);
+          resolve("failed"); return;
+        }
+        places.keywordSearch(cands[k], (r, s) => {
+          if (s === OK && r[0]) place(r[0].x, r[0].y); else tryKeyword(k + 1);
+        });
+      };
+      tryAddr();
     });
   }
 
