@@ -12,31 +12,6 @@
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel));
 
-  // ----- 아이콘 시스템 (라인 SVG, currentColor) -----
-  const ICONS = {
-    pin: '<path d="M12 21s-6.5-5-6.5-10.5a6.5 6.5 0 1113 0C18.5 16 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.3"/>',
-    home: '<path d="M3.5 11.5 12 4l8.5 7.5"/><path d="M5.5 10v9.5h13V10"/>',
-    tag: '<path d="M3.5 12.5 11 5h6.5V11.5L10 19z"/><circle cx="14.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"/>',
-    building: '<rect x="5" y="3.5" width="14" height="17" rx="1.5"/><path d="M9 7.5h2M13 7.5h2M9 11h2M13 11h2M9 14.5h2M13 14.5h2M10.5 20.5v-3h3v3"/>',
-    calendar: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 9h16M8 3.5v3M16 3.5v3"/>',
-    won: '<path d="M4 7l3 10 3-8 2 8 3-10M3.5 11.5h17"/>',
-    map: '<path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6 9 4z"/><path d="M9 4v14M15 6v14"/>',
-    star: '<path d="M12 4.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 10.2l5.4-.8z"/>',
-    search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>',
-    list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
-    book: '<path d="M5 4.5h11a2 2 0 012 2v13H7a2 2 0 01-2-2z"/><path d="M5 17.5a2 2 0 012-2h11"/>',
-    target: '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r=".5" fill="currentColor" stroke="none"/>',
-    calc: '<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8 7.5h8M8 11.5h.01M12 11.5h.01M16 11.5v5M8 15.5h.01M12 15.5h.01"/>',
-    doc: '<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4M9.5 12.5h5M9.5 15.5h5"/>',
-    refresh: '<path d="M19 12a7 7 0 11-2-4.9M19 4v3.5h-3.5"/>',
-    arrow: '<path d="M9 6l6 6-6 6"/>',
-    clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 1.8"/>',
-    check: '<path d="M5 12.5l4 4 10-10"/>',
-  };
-  function icon(name, cls) {
-    return `<svg class="ic ${cls || ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
-  }
-
   // ----- 날짜/디데이 -----
   function today() {
     const d = new Date();
@@ -111,7 +86,7 @@
     return _kakaoReady;
   }
   function mapErr(msg) {
-    return `<div class="map-err">${msg}</div>`;
+    return `<div class="map-err">🗺️ ${msg}</div>`;
   }
   async function initMap(containerId, address) {
     const el = document.getElementById(containerId);
@@ -137,7 +112,7 @@
         if (status === kakao.maps.services.Status.OK && res[0]) { place(res[0].x, res[0].y); return; }
         new kakao.maps.services.Places().keywordSearch(address, (r2, s2) => {
           if (s2 === kakao.maps.services.Status.OK && r2[0]) { place(r2[0].x, r2[0].y); return; }
-          el.innerHTML = mapErr(`이 주소를 지도에서 찾지 못했습니다.<br>아래 "지도" 버튼으로 확인하세요.`);
+          el.innerHTML = mapErr(`이 주소를 지도에서 찾지 못했습니다.<br>아래 "🗺️ 지도" 버튼으로 확인하세요.`);
           resolve("failed");
         });
       });
@@ -201,7 +176,7 @@
     const allLive = Object.values(s).length && Object.values(s).every((v) => v === "live");
     const allSample = Object.values(s).every((v) => v === "sample");
     el.className = "src-badge " + (allLive ? "live" : allSample ? "sample" : "mixed");
-    el.innerHTML = `<span class="dot"></span>${parts.join(" · ") || "불러오는 중…"}`;
+    el.textContent = "● " + (parts.join(" · ") || "불러오는 중…");
   }
 
   // ----- 필터링 -----
@@ -250,7 +225,7 @@
         <span class="sch-dday">${ddayShort(x.start, x.end)}</span>
       </div>`;
     }).join("");
-    return `<div class="schedule">${rows}</div>`;
+    return `<div class="schedule"><div class="sch-title">📌 청약 단계별 일정</div>${rows}</div>`;
   }
 
   // 공고 보기 버튼: LH PDF는 inline, 청약홈은 앱 내 상세모달, 그 외는 원문
@@ -338,36 +313,34 @@
     const msHtml = milestones.length
       ? `<div class="dates">${milestones.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join("")}</div>` : "";
 
-    const isRent = /임대/.test(n.category) || /임대/.test(n.supplyKind || "");
-    const priceColLabel = isRent ? "임대조건" : "분양가";
     const rows = units.map((u) => `<tr><td class="t">${fmtType(u.type)}</td><td>${u.units || "-"}세대</td><td class="p">${fmtPrice(u.price)}</td></tr>`).join("");
-    const docBtn = n.docUrl ? `<a class="act-btn" href="/api/doc?url=${encodeURIComponent(n.docUrl)}" target="_blank" rel="noopener">${icon("doc")}공고문 PDF</a>` : "";
+    const docBtn = n.docUrl ? `<a class="act-btn" href="/api/doc?url=${encodeURIComponent(n.docUrl)}" target="_blank" rel="noopener">📄 공고문 PDF</a>` : "";
 
     return `
       <div class="md-head">
         <div class="md-tags"><span class="cat" style="background:${CAT_COLORS[n.category] || "#475569"}">${n.category}</span>
           <span class="src">${n.source}</span>${/무순위/.test(n.supplyKind || "") ? '<span class="kind">무순위</span>' : ""}</div>
         <h2>${n.title}</h2>
-        <p class="md-sub">${icon("pin")}${n.address || n.region || "-"}${n.supplier ? ` · ${n.supplier}` : ""}</p>
+        <p class="md-sub">📍 ${n.address || n.region || "-"}${n.supplier ? ` · 🏢 ${n.supplier}` : ""}</p>
       </div>
       ${priceBanner}
       <div class="md-stats two">
         <div><b>${totalUnits ? totalUnits + "세대" : "-"}</b><span>총 공급세대</span></div>
         <div><b>${n.recruitDate || "-"}</b><span>모집공고일</span></div>
       </div>
-      <h3 class="md-h3">${icon("calendar")}청약 일정</h3>
+      <h3 class="md-h3">📌 청약 일정</h3>
       ${scheduleBlock(n)}
       ${msHtml}
-      ${units.length ? `<h3 class="md-h3">${icon("home")}${isRent ? "면적별 임대조건" : "주택형별 분양가"}</h3>
+      ${units.length ? `<h3 class="md-h3">🏘️ 주택형별 분양가</h3>
         <div class="md-table-wrap"><table class="md-table">
-          <thead><tr><th>주택형(전용)</th><th>공급세대</th><th>${priceColLabel}</th></tr></thead>
+          <thead><tr><th>주택형(전용)</th><th>공급세대</th><th>분양가</th></tr></thead>
           <tbody>${rows}</tbody></table></div>` : ""}
-      ${spChips ? `<h3 class="md-h3">${icon("target")}특별공급 물량</h3><div class="chips">${spChips}</div>` : ""}
-      ${mapAddr(n) ? `<div id="mdMapWrap"><h3 class="md-h3">${icon("map")}위치</h3><div id="mdMap" class="md-map"></div></div>` : ""}
+      ${spChips ? `<h3 class="md-h3">🎯 특별공급 물량</h3><div class="chips">${spChips}</div>` : ""}
+      ${mapAddr(n) ? `<div id="mdMapWrap"><h3 class="md-h3">🗺️ 위치</h3><div id="mdMap" class="md-map"></div></div>` : ""}
       <div class="md-actions">
-        <a class="apply-btn" href="${n.url}" target="_blank" rel="noopener">신청 / 공고 바로가기 ${icon("arrow")}</a>
+        <a class="apply-btn" href="${n.url}" target="_blank" rel="noopener">신청 / 공고 바로가기 ↗</a>
         ${docBtn}
-        ${mapAddr(n) ? `<a class="act-btn" href="https://map.naver.com/p/search/${encodeURIComponent(mapAddr(n))}" target="_blank" rel="noopener">${icon("map")}지도</a>` : ""}
+        ${mapAddr(n) ? `<a class="act-btn" href="https://map.naver.com/p/search/${encodeURIComponent(mapAddr(n))}" target="_blank" rel="noopener">🗺️ 지도</a>` : ""}
       </div>`;
   }
 
@@ -395,16 +368,16 @@
         </div>
         <h3 class="card-title">${n.title || "(제목 없음)"}</h3>
         <div class="card-sub">
-          <span>${icon("pin")}${regionShort(n)}</span>
-          ${n.totalUnits ? `<span>${icon("home")}${n.totalUnits}세대</span>` : ""}
-          ${n.type ? `<span>${icon("tag")}${n.type}</span>` : ""}
+          <span>📍 ${regionShort(n)}</span>
+          ${n.totalUnits ? `<span>🏠 ${n.totalUnits}세대</span>` : ""}
+          ${n.type ? `<span>🏷️ ${n.type}</span>` : ""}
         </div>
         <div class="card-foot">
           <span class="cf-left">
-            <button class="fav ${isFav(n.id) ? "on" : ""}" data-fav="${n.id}" aria-label="관심공고" title="관심공고">${icon("star")}</button>
+            <button class="fav ${isFav(n.id) ? "on" : ""}" data-fav="${n.id}" aria-label="관심공고" title="관심공고">${isFav(n.id) ? "★" : "☆"}</button>
             <span class="cf-meta">${n.source}${n.applyEnd ? " · 마감 " + md(n.applyEnd) : ""}</span>
           </span>
-          <span class="chev">자세히 ${icon("arrow")}</span>
+          <span class="chev">자세히 ›</span>
         </div>
       </article>`;
   }
@@ -436,7 +409,7 @@
             <input id="search" class="search" type="search" placeholder="단지명·지역·사업주체 검색" value="${f.q}">
           </div>
           <label class="chkopen"><input type="checkbox" id="onlyOpen" ${f.onlyOpen ? "checked" : ""}> <span>접수중만</span></label>
-          <button id="favToggle" class="favbtn ${f.favOnly ? "active" : ""}">${icon("star")} 관심${getFavs().length ? ` ${getFavs().length}` : ""}</button>
+          <button id="favToggle" class="favbtn ${f.favOnly ? "active" : ""}">${f.favOnly ? "★" : "☆"} 관심${getFavs().length ? ` ${getFavs().length}` : ""}</button>
           <select id="stage" class="sel">
             ${["all:전체 단계", "특별공급:특별공급 진행", "1순위:1순위 진행", "2순위:2순위 진행"].map((s) => {
               const [v, l] = s.split(":");
@@ -725,10 +698,6 @@
     else if (state.view === "guide") main.innerHTML = renderGuide();
     else if (state.view === "strategy") main.innerHTML = renderStrategy();
     else if (state.view === "loan") main.innerHTML = renderLoan();
-    // 섹션 제목의 이모지 접두어 제거 (실서비스형 정돈된 헤딩)
-    $$(".sec-title", main).forEach((el) => {
-      el.textContent = el.textContent.replace(/^\s*[\p{Extended_Pictographic}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}️]+\s*/u, "");
-    });
     bindDynamic();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
