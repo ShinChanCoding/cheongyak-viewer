@@ -330,12 +330,20 @@
       ? `<div class="dates">${milestones.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join("")}</div>` : "";
 
     const rows = units.map((u) => `<tr><td class="t">${fmtType(u.type)}</td><td>${u.units || "-"}세대</td><td class="p">${fmtPrice(u.price)}</td></tr>`).join("");
+    // 금액 셀: 숫자면 포맷, "공고문 참조" 등 텍스트면 PDF 링크로
+    const moneyCell = (v) => {
+      const s = String(v == null ? "" : v).trim();
+      const isNum = /^\d+$/.test(s.replace(/[,\s]/g, ""));
+      if (isNum) return fmtMoney(s);
+      if (!s || s === "-") return "-";
+      return n.docUrl ? `<a class="ref-link" href="/api/doc?url=${encodeURIComponent(n.docUrl)}" target="_blank" rel="noopener">${s} 📄</a>` : s;
+    };
     const lhRows = (n.lhUnits || []).map((u) => `<tr>
         <td class="t">${u.type || "-"}</td>
         <td>${u.areaEx ? u.areaEx + "㎡" : "-"}</td>
         <td>${u.units || u.nowUnits || "-"}</td>
-        <td class="p">${fmtMoney(u.deposit)}</td>
-        <td>${fmtMoney(u.rent)}</td></tr>`).join("");
+        <td class="p">${moneyCell(u.deposit)}</td>
+        <td>${moneyCell(u.rent)}</td></tr>`).join("");
     const docBtn = n.docUrl ? `<a class="act-btn" href="/api/doc?url=${encodeURIComponent(n.docUrl)}" target="_blank" rel="noopener">📄 공고문 PDF</a>` : "";
 
     return `
