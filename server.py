@@ -47,6 +47,7 @@ APPLYHOME_REMNDR_URL = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/get
 APPLYHOME_MDL_URL = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancMdl"
 LH_URL = "https://apis.data.go.kr/B552555/lhLeaseNoticeInfo1"
 LH_DETAIL_URL = "https://apis.data.go.kr/B552555/lhLeaseNoticeDtlInfo1/getLeaseNoticeDtlInfo1"
+LH_SPL_URL = "https://apis.data.go.kr/B552555/lhLeaseNoticeSplInfo1/getLeaseNoticeSplInfo1"
 
 # 상세 API 권한 미승인(403/401) 시 자동으로 비활성화하여 불필요한 호출 차단
 LH_DETAIL_DISABLED = False
@@ -413,6 +414,47 @@ def fetch_lh_detail(raw):
         return None
 
 
+def fetch_lh_spl(raw):
+    """LH 공급정보: 주택형별 전용면적·세대수·임대보증금·월임대료(또는 분양가)."""
+    key = CONFIG.get("lh_service_key", "")
+    pan = str(raw.get("PAN_ID", ""))
+    if not key or not pan:
+        return []
+    params = {
+        "serviceKey": key, "PAN_ID": pan,
+        "CCR_CNNT_SYS_DS_CD": raw.get("CCR_CNNT_SYS_DS_CD", ""),
+        "UPP_AIS_TP_CD": raw.get("UPP_AIS_TP_CD", ""),
+        "AIS_TP_CD": raw.get("AIS_TP_CD", ""),
+        "SPL_INF_TP_CD": raw.get("SPL_INF_TP_CD", ""),
+    }
+    url = LH_SPL_URL + "?" + urllib.parse.urlencode(params, safe="%+")
+    try:
+        data = http_get_json(url, timeout=10)
+    except Exception as e:
+        print(f"[warn] LH 공급정보 조회 실패(PAN_ID={pan}): {e}")
+        return []
+    # [{dsSch},{dsList01Nm, dsList01, ...}] 에서 dsList01 추출
+    rows = []
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict) and isinstance(item.get("dsList01"), list):
+                rows = item["dsList01"]
+                break
+    out = []
+    for r in rows:
+        out.append({
+            "type": str(r.get("HTY_NNA", "")).strip(),
+            "areaEx": str(r.get("DDO_AR", "")).strip(),    # 전용면적
+            "areaSp": str(r.get("SPL_AR", "")).strip(),     # 공급면적
+            "units": str(r.get("HSH_CNT", "")).strip(),
+            "nowUnits": str(r.get("NOW_HSH_CNT", "")).strip(),
+            "deposit": str(r.get("LS_GMY", "")).strip(),    # 임대보증금(원) 또는 "공고문 참조"
+            "rent": str(r.get("RFE", "")).strip(),          # 월임대료(원) 또는 "공고문 참조"
+            "danji": str(r.get("SBD_LGO_NM", "")).strip(),
+        })
+    return out
+
+
 def normalize_lh_detail(data):
     """상세 응답에서 접수일정/세대수/전용면적/입주예정/당첨발표/계약/공고문파일 추출.
     응답: [{dsSch}, {dsSplScdl, dsSbd, dsAhflInfo, ...}] — dsXXXNm(라벨)은 무시."""
@@ -615,9 +657,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "SPL_INF_TP_CD": qs.get("spl", [""])[0],
             }
             try:
-                self._send_json({"detail": fetch_lh_detail(raw) or {}})
+                pan = raw["PAN_ID"]
+                detail = fetch_lh_detail(raw) or {}
+                units = cached("lh-spl:" + pan, 1800, lambda: fetch_lh_spl(raw))
+                self._send_json({"detail": detail, "units": units})
             except Exception as e:
-                self._send_json({"detail": {}, "error": str(e)}, 502)
+                self._send_json({"detail": {}, "units": [], "error": str(e)}, 502)
             return
         if parsed.path == "/api/doc":
             self._serve_doc(urllib.parse.parse_qs(parsed.query).get("url", [""])[0])

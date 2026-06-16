@@ -331,6 +331,10 @@ a { color: inherit; }
 .md-table tbody tr:last-child td { border-bottom: none; }
 .md-table td.t { font-weight: 700; }
 .md-table td.p { font-weight: 800; color: #b06d12; text-align: right; }
+.md-table.lh-tbl { font-size: 12px; }
+.md-table.lh-tbl th, .md-table.lh-tbl td { padding: 8px 7px; text-align: center; }
+.md-table.lh-tbl td.t { text-align: left; font-weight: 700; }
+.md-table.lh-tbl td.p { text-align: center; }
 .md-table th:nth-child(2), .md-table td:nth-child(2) { text-align: center; }
 .md-table th:nth-child(3) { text-align: right; }
 .md-actions { display: flex; gap: 8px; margin-top: 22px; }

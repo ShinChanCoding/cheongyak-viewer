@@ -251,6 +251,20 @@
     const eok = Math.floor(v / 10000), man = v % 10000;
     return (eok ? `${eok}억` : "") + (man ? ` ${man.toLocaleString("ko-KR")}만원` : (eok ? "" : `${v}만원`));
   }
+  // 금액 문자열 포맷: 숫자(원)면 억/만원으로, "공고문 참조" 등 텍스트는 그대로
+  function fmtMoney(v) {
+    const s = String(v == null ? "" : v).trim();
+    if (!s) return "-";
+    const digits = s.replace(/[,\s]/g, "");
+    if (!/^\d+$/.test(digits)) return s;            // "공고문 참조" 등
+    const won = +digits;
+    if (won === 0) return "-";
+    const eok = Math.floor(won / 100000000);
+    const man = Math.floor((won % 100000000) / 10000);
+    if (eok) return `${eok}억${man ? " " + man.toLocaleString("ko-KR") + "만" : ""}원`;
+    if (man) return `${man.toLocaleString("ko-KR")}만원`;
+    return `${won.toLocaleString("ko-KR")}원`;
+  }
   function fmtType(t) {
     const m = String(t || "").match(/([\d.]+)\s*([A-Za-z]*)/);
     if (!m) return t || "-";
@@ -276,10 +290,12 @@
       // LH 상세는 여기서 지연 로딩 (목록 속도 개선)
       try {
         const res = await fetch("/api/lh-detail?" + new URLSearchParams(n.lhKey).toString());
-        const d = (await res.json()).detail || {};
+        const j = await res.json();
+        const d = j.detail || {};
         ["totalUnits", "priceNote", "winnerDate", "contractStart", "contractEnd", "moveInDate", "docUrl", "address"]
           .forEach((k) => { if (d[k]) n[k] = d[k]; });
         if (d.schedule && d.schedule.length) n.schedule = d.schedule;
+        n.lhUnits = j.units || [];
       } catch (e) { /* 무시 */ }
     }
     box.innerHTML = renderDetail(n, units);
@@ -314,6 +330,12 @@
       ? `<div class="dates">${milestones.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join("")}</div>` : "";
 
     const rows = units.map((u) => `<tr><td class="t">${fmtType(u.type)}</td><td>${u.units || "-"}세대</td><td class="p">${fmtPrice(u.price)}</td></tr>`).join("");
+    const lhRows = (n.lhUnits || []).map((u) => `<tr>
+        <td class="t">${u.type || "-"}</td>
+        <td>${u.areaEx ? u.areaEx + "㎡" : "-"}</td>
+        <td>${u.units || u.nowUnits || "-"}</td>
+        <td class="p">${fmtMoney(u.deposit)}</td>
+        <td>${fmtMoney(u.rent)}</td></tr>`).join("");
     const docBtn = n.docUrl ? `<a class="act-btn" href="/api/doc?url=${encodeURIComponent(n.docUrl)}" target="_blank" rel="noopener">📄 공고문 PDF</a>` : "";
 
     return `
@@ -335,6 +357,10 @@
         <div class="md-table-wrap"><table class="md-table">
           <thead><tr><th>주택형(전용)</th><th>공급세대</th><th>분양가</th></tr></thead>
           <tbody>${rows}</tbody></table></div>` : ""}
+      ${lhRows ? `<h3 class="md-h3">🏘️ 면적별 ${/분양/.test(n.category) ? "공급가" : "임대조건"}</h3>
+        <div class="md-table-wrap"><table class="md-table lh-tbl">
+          <thead><tr><th>주택형</th><th>전용</th><th>세대</th><th>보증금</th><th>월임대료</th></tr></thead>
+          <tbody>${lhRows}</tbody></table></div>` : ""}
       ${spChips ? `<h3 class="md-h3">🎯 특별공급 물량</h3><div class="chips">${spChips}</div>` : ""}
       ${mapAddr(n) ? `<div id="mdMapWrap"><h3 class="md-h3">🗺️ 위치</h3><div id="mdMap" class="md-map"></div></div>` : ""}
       <div class="md-actions">
