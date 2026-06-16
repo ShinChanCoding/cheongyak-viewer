@@ -286,6 +286,13 @@
         const res = await fetch(`/api/applyhome-detail?hm=${encodeURIComponent(n.hm)}&pb=${encodeURIComponent(n.pb)}`);
         units = (await res.json()).units || [];
       } catch (e) { /* 무시 */ }
+      // 접수 마감된 공고는 경쟁률도 조회
+      if (statusOf(n).key === "closed" && !n.cmpet) {
+        try {
+          const r2 = await fetch(`/api/applyhome-cmpet?hm=${encodeURIComponent(n.hm)}&pb=${encodeURIComponent(n.pb)}`);
+          n.cmpet = (await r2.json()).rates || [];
+        } catch (e) { /* 무시 */ }
+      }
     } else if (n.source === "LH" && n.lhKey) {
       // LH 상세는 여기서 지연 로딩 (목록 속도 개선)
       try {
@@ -344,6 +351,12 @@
         <td>${u.units || u.nowUnits || "-"}</td>
         <td class="p">${moneyCell(u.deposit)}</td>
         <td>${moneyCell(u.rent)}</td></tr>`).join("");
+    const cmpet = (n.cmpet || []).filter((c) => c.req > 0 || c.supply > 0);
+    const cmpetRows = cmpet.map((c) => `<tr>
+        <td class="t">${fmtType(c.type)}</td>
+        <td>${c.supply || "-"}</td>
+        <td>${c.req != null ? c.req.toLocaleString("ko-KR") : "-"}</td>
+        <td class="p ${c.under ? "under" : ""}">${c.under ? "미달" : (c.rate ? c.rate.toFixed(2) + " : 1" : "-")}</td></tr>`).join("");
     const docBtn = n.docUrl ? `<a class="act-btn" href="/api/doc?url=${encodeURIComponent(n.docUrl)}" target="_blank" rel="noopener">📄 공고문 PDF</a>` : "";
 
     return `
@@ -369,6 +382,10 @@
         <div class="md-table-wrap"><table class="md-table lh-tbl">
           <thead><tr><th>주택형</th><th>전용</th><th>세대</th><th>보증금</th><th>월임대료</th></tr></thead>
           <tbody>${lhRows}</tbody></table></div>` : ""}
+      ${cmpetRows ? `<h3 class="md-h3">🔥 청약 경쟁률 (1순위)</h3>
+        <div class="md-table-wrap"><table class="md-table cmpet-tbl">
+          <thead><tr><th>주택형(전용)</th><th>공급</th><th>1순위 접수</th><th>경쟁률</th></tr></thead>
+          <tbody>${cmpetRows}</tbody></table></div>` : ""}
       ${spChips ? `<h3 class="md-h3">🎯 특별공급 물량</h3><div class="chips">${spChips}</div>` : ""}
       ${mapAddr(n) ? `<div id="mdMapWrap"><h3 class="md-h3">🗺️ 위치</h3><div id="mdMap" class="md-map"></div></div>` : ""}
       <div class="md-actions">

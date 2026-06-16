@@ -337,6 +337,11 @@ a { color: inherit; }
 .md-table.lh-tbl td.p { text-align: center; }
 .ref-link { color: var(--primary); font-weight: 700; text-decoration: none; white-space: nowrap; }
 .ref-link:hover { text-decoration: underline; }
+.cmpet-tbl { font-size: 12.5px; }
+.cmpet-tbl th, .cmpet-tbl td { text-align: center; padding: 9px 8px; }
+.cmpet-tbl td.t { text-align: left; font-weight: 700; }
+.cmpet-tbl td.p { color: #c0392b; font-weight: 800; }
+.cmpet-tbl td.p.under { color: var(--muted); font-weight: 600; }
 .md-table th:nth-child(2), .md-table td:nth-child(2) { text-align: center; }
 .md-table th:nth-child(3) { text-align: right; }
 .md-actions { display: flex; gap: 8px; margin-top: 22px; }

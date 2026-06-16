@@ -45,6 +45,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 APPLYHOME_URL = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancDetail"
 APPLYHOME_REMNDR_URL = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getRemndrLttotPblancDetail"
 APPLYHOME_MDL_URL = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancMdl"
+APPLYHOME_CMPET_URL = "https://api.odcloud.kr/api/ApplyhomeInfoCmpetRtSvc/v1/getAPTLttotPblancCmpet"
 LH_URL = "https://apis.data.go.kr/B552555/lhLeaseNoticeInfo1"
 LH_DETAIL_URL = "https://apis.data.go.kr/B552555/lhLeaseNoticeDtlInfo1/getLeaseNoticeDtlInfo1"
 LH_SPL_URL = "https://apis.data.go.kr/B552555/lhLeaseNoticeSplInfo1/getLeaseNoticeSplInfo1"
@@ -263,6 +264,40 @@ def fetch_applyhome_mdl(hm, pb):
                 "청년": _int(r.get("YGMN_HSHLDCO")),
                 "이전기관": _int(r.get("TRANSR_INSTT_ENFSN_HSHLDCO")),
             },
+        })
+    return out
+
+
+def fetch_applyhome_cmpet(hm, pb):
+    """청약홈 APT 경쟁률: 주택형별 1순위 접수/공급 집계 (접수 마감 공고만 데이터 존재)."""
+    key = CONFIG.get("applyhome_service_key", "")
+    if not key or not (hm or pb):
+        return []
+    params = {
+        "page": 1, "perPage": 200, "serviceKey": key,
+        "cond[HOUSE_MANAGE_NO::EQ]": hm, "cond[PBLANC_NO::EQ]": pb,
+    }
+    url = APPLYHOME_CMPET_URL + "?" + urllib.parse.urlencode(params, safe="%+")
+    try:
+        rows = http_get_json(url).get("data", [])
+    except Exception as e:
+        print(f"[warn] 청약홈 경쟁률 조회 실패: {e}")
+        return []
+    by_type = {}
+    for r in rows:
+        ty = str(r.get("HOUSE_TY", ""))
+        d = by_type.setdefault(ty, {"type": ty, "supply": 0, "req1": 0})
+        if _int(r.get("SUPLY_HSHLDCO")):
+            d["supply"] = _int(r.get("SUPLY_HSHLDCO"))
+        if str(r.get("SUBSCRPT_RANK_CODE")) == "1":
+            d["req1"] += _int(r.get("REQ_CNT"))
+    out = []
+    for d in by_type.values():
+        supply, req = d["supply"], d["req1"]
+        out.append({
+            "type": d["type"], "supply": supply, "req": req,
+            "rate": round(req / supply, 2) if supply else 0,
+            "under": supply > 0 and req < supply,
         })
     return out
 
@@ -648,6 +683,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"units": units})
             except Exception as e:
                 self._send_json({"units": [], "error": str(e)}, 502)
+            return
+        if parsed.path == "/api/applyhome-cmpet":
+            qs = urllib.parse.parse_qs(parsed.query)
+            hm, pb = qs.get("hm", [""])[0], qs.get("pb", [""])[0]
+            try:
+                rates = cached("ah-cmpet:" + hm + ":" + pb, 1800, lambda: fetch_applyhome_cmpet(hm, pb))
+                self._send_json({"rates": rates})
+            except Exception as e:
+                self._send_json({"rates": [], "error": str(e)}, 502)
             return
         if parsed.path == "/api/lh-detail":
             qs = urllib.parse.parse_qs(parsed.query)
