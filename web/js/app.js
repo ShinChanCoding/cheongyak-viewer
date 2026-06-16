@@ -65,6 +65,7 @@
     const a = n.address || n.region || "";
     return a && a.length > 3 ? a : "";
   }
+  function naverUrl(addr) { return "https://map.naver.com/p/search/" + encodeURIComponent(addr); }
 
   // ----- 카카오 지도 임베드 (키 있을 때만) -----
   let _kakaoKey, _kakaoReady;
@@ -405,6 +406,7 @@
     const isLhDanji = n.source === "LH" && (n.lhUnits || []).length;
     const danjis = isLhDanji ? buildDanjis(n) : [];
     n._danjis = danjis; n._danjiIdx = 0;
+    const naverAddr = (isLhDanji && danjis[0]) ? (danjis[0].address || mapAddr(n)) : mapAddr(n);
     const rentLabel = /분양/.test(n.category) ? "면적별 공급가" : "면적별 임대조건";
     const danjiTabs = danjis.length > 1
       ? `<div class="danji-tabs">${danjis.map((d, i) => `<button class="danji-tab ${i === 0 ? "active" : ""}" data-danji="${i}">${d.name}</button>`).join("")}</div>`
@@ -451,7 +453,7 @@
       <div class="md-actions">
         <a class="apply-btn" href="${n.url}" target="_blank" rel="noopener">신청 / 공고 바로가기 ↗</a>
         ${docBtn}
-        ${mapAddr(n) ? `<a class="act-btn" href="https://map.naver.com/p/search/${encodeURIComponent(mapAddr(n))}" target="_blank" rel="noopener">🗺️ 지도</a>` : ""}
+        ${naverAddr ? `<a id="naverMapBtn" class="act-btn" href="${naverUrl(naverAddr)}" target="_blank" rel="noopener">🗺️ 지도</a>` : ""}
       </div>`;
   }
 
@@ -864,6 +866,8 @@
         if (panel) panel.innerHTML = lhDanjiPanel(_openN, _openN._danjis, idx);
         const addr = (_openN._danjis[idx] || {}).address || mapAddr(_openN);
         if (addr && $("#mdMap")) initMap("mdMap", addr).then((st) => { if (st === "nokey") { const w = $("#mdMapWrap"); if (w) w.remove(); } });
+        const nv = $("#naverMapBtn");
+        if (nv && addr) nv.href = naverUrl(addr);
         return;
       }
       const fav = e.target.closest("[data-fav]");
