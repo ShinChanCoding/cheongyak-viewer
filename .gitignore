@@ -5,3 +5,4 @@ __pycache__/
 .claude/
 _detail_dump.json
 _probe_*.py
+data/_lh_detail_cache.json

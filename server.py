@@ -52,7 +52,30 @@ LH_SPL_URL = "https://apis.data.go.kr/B552555/lhLeaseNoticeSplInfo1/getLeaseNoti
 
 # 상세 API 권한 미승인(403/401) 시 자동으로 비활성화하여 불필요한 호출 차단
 LH_DETAIL_DISABLED = False
-_lh_detail_cache = {}
+
+# LH 상세는 호출이 느려서(콜당 ~2초) 디스크에 캐싱 -> 재시작해도 즉시 로딩
+LH_CACHE_FILE = os.path.join(DATA_DIR, "_lh_detail_cache.json")
+
+
+def _load_lh_cache():
+    try:
+        if os.path.exists(LH_CACHE_FILE) and (time.time() - os.path.getmtime(LH_CACHE_FILE) < 86400):
+            with open(LH_CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[warn] LH 캐시 로드 실패: {e}")
+    return {}
+
+
+def _save_lh_cache():
+    try:
+        with open(LH_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump({k: v for k, v in _lh_detail_cache.items() if v}, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"[warn] LH 캐시 저장 실패: {e}")
+
+
+_lh_detail_cache = _load_lh_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -418,12 +441,16 @@ def fetch_lh(per_page=100, keep=60):
 
 
 def enrich_lh_status(pairs):
-    """각 LH 공고의 상태를 상세의 '청약 접수' 시작/종료일로 보정 (병렬). 권한 없으면 스킵."""
+    """각 LH 공고의 상태를 상세의 '청약 접수' 시작/종료일로 보정 (병렬). 권한 없으면 스킵.
+    이미 마감(CLSG 지남)인 공고는 상세 호출 생략 -> 첫 로딩 시간 단축."""
     if LH_DETAIL_DISABLED or not pairs:
         return
+    today = datetime.now().strftime("%Y-%m-%d")
 
     def work(p):
         n, raw = p
+        if n.get("applyEnd") and n["applyEnd"] < today:   # 이미 마감 -> 접수일정 불필요
+            return
         d = fetch_lh_detail(raw)
         if not d:
             return
@@ -440,6 +467,7 @@ def enrich_lh_status(pairs):
             list(ex.map(work, pairs))
     except Exception as e:
         print(f"[warn] LH 상태 보강 실패: {e}")
+    _save_lh_cache()   # 디스크에 저장 -> 다음 실행부터 즉시
 
 
 def fetch_lh_detail(raw):
