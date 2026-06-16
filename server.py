@@ -392,7 +392,7 @@ def fetch_lh(per_page=100, keep=60):
         }
         url = LH_URL + "/lhLeaseNoticeInfo1?" + urllib.parse.urlencode(params, safe="%+")
         rows = extract_lh_list(http_get_json(url))
-        out = []
+        out, raw_by_id = [], {}
         NON_HOUSING = ("어린이집", "상가", "주차장", "창고", "공장", "토지", "단지내")
         for r in rows:
             upp = str(r.get("UPP_AIS_TP_NM", ""))
@@ -402,15 +402,44 @@ def fetch_lh(per_page=100, keep=60):
                 continue
             if any(w in tp for w in NON_HOUSING):
                 continue
-            out.append(normalize_lh(r))
+            n = normalize_lh(r)
+            out.append(n)
+            raw_by_id[n["id"]] = r
         out = [n for n in out if n.get("title")]
         out.sort(key=lambda n: n.get("recruitDate", ""), reverse=True)
         out = out[:keep]
-        # 상세(세대수·일정·임대조건)는 모달 열 때 /api/lh-detail 로 지연 로딩 -> 목록 빠름
+        # 상태(접수예정/중/마감) 정확도를 위해 상세에서 '청약 접수' 시작/종료일을 가져와 반영
+        # (병렬 + PAN_ID 캐싱 -> 모달 열 때도 캐시 재사용. 목록 응답은 10분 캐시)
+        enrich_lh_status([(n, raw_by_id[n["id"]]) for n in out])
         return (out, "live") if out else (load_sample("sample_lh.json"), "sample")
     except Exception as e:
         print(f"[warn] LH API 호출 실패 -> 샘플 사용: {e}")
         return load_sample("sample_lh.json"), "sample"
+
+
+def enrich_lh_status(pairs):
+    """각 LH 공고의 상태를 상세의 '청약 접수' 시작/종료일로 보정 (병렬). 권한 없으면 스킵."""
+    if LH_DETAIL_DISABLED or not pairs:
+        return
+
+    def work(p):
+        n, raw = p
+        d = fetch_lh_detail(raw)
+        if not d:
+            return
+        sch = d.get("schedule") or []
+        acp = [x for x in sch if x.get("label") == "청약 접수"]
+        s, e = _span(acp or sch)
+        if s:
+            n["applyStart"] = s
+        if e:
+            n["applyEnd"] = e
+
+    try:
+        with ThreadPoolExecutor(max_workers=32) as ex:
+            list(ex.map(work, pairs))
+    except Exception as e:
+        print(f"[warn] LH 상태 보강 실패: {e}")
 
 
 def fetch_lh_detail(raw):
@@ -716,11 +745,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             source = (qs.get("source", ["all"])[0]).lower()
             items, sources = [], {}
             if source in ("all", "applyhome"):
-                ah, ah_src = cached("notices:applyhome", 600, fetch_applyhome)
+                ah, ah_src = cached("notices:applyhome", 1800, fetch_applyhome)
                 items += ah
                 sources["applyhome"] = ah_src
             if source in ("all", "lh"):
-                lh, lh_src = cached("notices:lh", 600, fetch_lh)
+                lh, lh_src = cached("notices:lh", 1800, fetch_lh)
                 items += lh
                 sources["lh"] = lh_src
             self._send_json({"items": items, "sources": sources, "count": len(items)})
@@ -729,10 +758,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().do_GET()
 
 
+def prewarm():
+    """서버 시작 시 백그라운드로 목록 캐시를 미리 채워 첫 사용자 요청을 빠르게."""
+    try:
+        cached("notices:applyhome", 1800, fetch_applyhome)
+        cached("notices:lh", 1800, fetch_lh)
+        print("[info] 데이터 프리워밍 완료")
+    except Exception as e:
+        print(f"[warn] 프리워밍 실패: {e}")
+
+
 def main():
     port = int(os.environ.get("PORT", CONFIG.get("port", 8000)))
     os.chdir(WEB_DIR)
     handler = Handler
+    import threading
+    threading.Thread(target=prewarm, daemon=True).start()
     with socketserver.ThreadingTCPServer(("", port), handler) as httpd:
         httpd.daemon_threads = True
         print("=" * 56)
