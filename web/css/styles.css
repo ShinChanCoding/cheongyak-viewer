@@ -342,6 +342,14 @@ a { color: inherit; }
 .cmpet-tbl td.t { text-align: left; font-weight: 700; }
 .cmpet-tbl td.p { color: #c0392b; font-weight: 800; }
 .cmpet-tbl td.p.under { color: var(--muted); font-weight: 600; }
+
+/* 단지별 탭 */
+.md-h3-sub { font-size: 12px; font-weight: 600; color: var(--muted); }
+.danji-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.danji-tab { border: 1px solid var(--line-2); background: var(--surface-2); color: var(--ink-2); padding: 8px 13px; border-radius: var(--r-pill); font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; }
+.danji-tab:hover { border-color: var(--primary); color: var(--primary); }
+.danji-tab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+.danji-addr { font-size: 13px; color: var(--ink-2); font-weight: 600; margin: 0 0 10px; }
 .md-table th:nth-child(2), .md-table td:nth-child(2) { text-align: center; }
 .md-table th:nth-child(3) { text-align: right; }
 .md-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }

@@ -585,12 +585,20 @@ def normalize_lh_detail(data):
             doc_url = f["AHFL_URL"]
             break
 
-    # 단지 정확 주소 (지도용)
-    address = ""
+    # 단지별 정보 (한 공고에 여러 지역 단지가 묶인 경우 대비)
+    danjis = []
     for r in sbd:
-        if r.get("LGDN_ADR"):
-            address = str(r["LGDN_ADR"])
-            break
+        nm = str(r.get("LCC_NT_NM", "")).strip()
+        adr = str(r.get("LGDN_ADR", "")).strip()
+        if not (nm or adr):
+            continue
+        danjis.append({
+            "name": nm or "단지",
+            "address": adr,
+            "units": str(r.get("HSH_CNT", "")).strip(),
+            "moveIn": str(r.get("MVIN_XPC_YM", "")).replace(".", "-"),
+        })
+    address = danjis[0]["address"] if danjis else ""
 
     price_parts = []
     if area_note:
@@ -605,6 +613,7 @@ def normalize_lh_detail(data):
         "moveInDate": movein,
         "docUrl": doc_url,
         "address": address,
+        "danjis": danjis,
     }
 
 

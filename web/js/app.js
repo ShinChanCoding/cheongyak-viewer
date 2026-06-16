@@ -320,13 +320,59 @@
           .forEach((k) => { if (d[k]) n[k] = d[k]; });
         if (d.schedule && d.schedule.length) n.schedule = d.schedule;
         n.lhUnits = j.units || [];
+        n.danjis = d.danjis || [];
       } catch (e) { /* 무시 */ }
     }
+    _openN = n;
     box.innerHTML = renderDetail(n, units);
-    if (mapAddr(n)) {
-      initMap("mdMap", mapAddr(n)).then((st) => { if (st === "nokey") { const w = $("#mdMapWrap"); if (w) w.remove(); } });
+    const mapAddress = (n._danjis && n._danjis.length) ? (n._danjis[0].address || mapAddr(n)) : mapAddr(n);
+    if (mapAddress && $("#mdMap")) {
+      initMap("mdMap", mapAddress).then((st) => { if (st === "nokey") { const w = $("#mdMapWrap"); if (w) w.remove(); } });
     }
   }
+
+  // 금액 셀: 숫자면 포맷, "공고문 참조" 등 텍스트면 PDF 링크로
+  function moneyCell(v, docUrl) {
+    const s = String(v == null ? "" : v).trim();
+    if (/^\d+$/.test(s.replace(/[,\s]/g, ""))) return fmtMoney(s);
+    if (!s || s === "-") return "-";
+    return docUrl ? `<a class="ref-link" href="/api/doc?url=${encodeURIComponent(docUrl)}" target="_blank" rel="noopener">${s} 📄</a>` : s;
+  }
+
+  // LH 단지별 그룹 (한 공고에 여러 지역 단지가 묶인 경우)
+  function buildDanjis(n) {
+    const units = n.lhUnits || [];
+    const detail = n.danjis || [];
+    const map = new Map();
+    detail.forEach((d) => map.set(d.name, { name: d.name, address: d.address || "", moveIn: d.moveIn || "", units: [] }));
+    units.forEach((u) => {
+      const nm = (u.danji || (detail[0] && detail[0].name) || "단지").trim();
+      if (!map.has(nm)) map.set(nm, { name: nm, address: "", units: [] });
+      map.get(nm).units.push(u);
+    });
+    const arr = [...map.values()];
+    arr.forEach((d) => { if (!d.address) d.address = n.address || n.region || ""; });
+    return arr;
+  }
+
+  // 한 단지의 면적별 표 + 지도 패널
+  function lhDanjiPanel(n, danjis, idx) {
+    const d = danjis[idx] || danjis[0] || { units: [], address: "" };
+    const rows = (d.units || []).map((u) => `<tr>
+        <td class="t">${u.type || "-"}</td>
+        <td>${u.areaEx ? u.areaEx + "㎡" : "-"}</td>
+        <td>${u.units || u.nowUnits || "-"}</td>
+        <td class="p">${moneyCell(u.deposit, n.docUrl)}</td>
+        <td>${moneyCell(u.rent, n.docUrl)}</td></tr>`).join("");
+    return `
+      ${d.address ? `<p class="danji-addr">📍 ${d.address}${d.moveIn ? ` · 입주 ${d.moveIn}` : ""}</p>` : ""}
+      <div class="md-table-wrap"><table class="md-table lh-tbl">
+        <thead><tr><th>주택형</th><th>전용</th><th>세대</th><th>보증금</th><th>월임대료</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      ${d.address ? `<div id="mdMapWrap"><div id="mdMap" class="md-map"></div></div>` : ""}`;
+  }
+
+  let _openN = null;
 
   function renderDetail(n, units) {
     const sumUnits = units.reduce((s, u) => s + (u.units || 0), 0);
@@ -354,20 +400,20 @@
       ? `<div class="dates">${milestones.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join("")}</div>` : "";
 
     const rows = units.map((u) => `<tr><td class="t">${fmtType(u.type)}</td><td>${u.units || "-"}세대</td><td class="p">${fmtPrice(u.price)}</td></tr>`).join("");
-    // 금액 셀: 숫자면 포맷, "공고문 참조" 등 텍스트면 PDF 링크로
-    const moneyCell = (v) => {
-      const s = String(v == null ? "" : v).trim();
-      const isNum = /^\d+$/.test(s.replace(/[,\s]/g, ""));
-      if (isNum) return fmtMoney(s);
-      if (!s || s === "-") return "-";
-      return n.docUrl ? `<a class="ref-link" href="/api/doc?url=${encodeURIComponent(n.docUrl)}" target="_blank" rel="noopener">${s} 📄</a>` : s;
-    };
-    const lhRows = (n.lhUnits || []).map((u) => `<tr>
-        <td class="t">${u.type || "-"}</td>
-        <td>${u.areaEx ? u.areaEx + "㎡" : "-"}</td>
-        <td>${u.units || u.nowUnits || "-"}</td>
-        <td class="p">${moneyCell(u.deposit)}</td>
-        <td>${moneyCell(u.rent)}</td></tr>`).join("");
+
+    // LH 단지별 섹션 (여러 지역 단지면 탭으로 전환)
+    const isLhDanji = n.source === "LH" && (n.lhUnits || []).length;
+    const danjis = isLhDanji ? buildDanjis(n) : [];
+    n._danjis = danjis; n._danjiIdx = 0;
+    const rentLabel = /분양/.test(n.category) ? "면적별 공급가" : "면적별 임대조건";
+    const danjiTabs = danjis.length > 1
+      ? `<div class="danji-tabs">${danjis.map((d, i) => `<button class="danji-tab ${i === 0 ? "active" : ""}" data-danji="${i}">${d.name}</button>`).join("")}</div>`
+      : "";
+    const danjiSection = isLhDanji
+      ? `<h3 class="md-h3">🏘️ ${rentLabel}${danjis.length > 1 ? ` <span class="md-h3-sub">· 단지 ${danjis.length}곳</span>` : ""}</h3>
+         ${danjiTabs}
+         <div id="danjiPanel">${lhDanjiPanel(n, danjis, 0)}</div>` : "";
+
     const cmpet = (n.cmpet || []).filter((c) => c.req > 0 || c.supply > 0);
     const cmpetRows = cmpet.map((c) => `<tr>
         <td class="t">${fmtType(c.type)}</td>
@@ -395,16 +441,13 @@
         <div class="md-table-wrap"><table class="md-table">
           <thead><tr><th>주택형(전용)</th><th>공급세대</th><th>분양가</th></tr></thead>
           <tbody>${rows}</tbody></table></div>` : ""}
-      ${lhRows ? `<h3 class="md-h3">🏘️ 면적별 ${/분양/.test(n.category) ? "공급가" : "임대조건"}</h3>
-        <div class="md-table-wrap"><table class="md-table lh-tbl">
-          <thead><tr><th>주택형</th><th>전용</th><th>세대</th><th>보증금</th><th>월임대료</th></tr></thead>
-          <tbody>${lhRows}</tbody></table></div>` : ""}
+      ${danjiSection}
       ${cmpetRows ? `<h3 class="md-h3">🔥 청약 경쟁률 (1순위)</h3>
         <div class="md-table-wrap"><table class="md-table cmpet-tbl">
           <thead><tr><th>주택형(전용)</th><th>공급</th><th>1순위 접수</th><th>경쟁률</th></tr></thead>
           <tbody>${cmpetRows}</tbody></table></div>` : ""}
       ${spChips ? `<h3 class="md-h3">🎯 특별공급 물량</h3><div class="chips">${spChips}</div>` : ""}
-      ${mapAddr(n) ? `<div id="mdMapWrap"><h3 class="md-h3">🗺️ 위치</h3><div id="mdMap" class="md-map"></div></div>` : ""}
+      ${(mapAddr(n) && !isLhDanji) ? `<div id="mdMapWrap"><h3 class="md-h3">🗺️ 위치</h3><div id="mdMap" class="md-map"></div></div>` : ""}
       <div class="md-actions">
         <a class="apply-btn" href="${n.url}" target="_blank" rel="noopener">신청 / 공고 바로가기 ↗</a>
         ${docBtn}
@@ -811,6 +854,18 @@
     $("#refreshBtn").onclick = loadNotices;
     // 공고 상세보기 버튼 (이벤트 위임)
     document.addEventListener("click", (e) => {
+      const tab = e.target.closest("[data-danji]");
+      if (tab && _openN) {
+        e.preventDefault();
+        const idx = +tab.dataset.danji;
+        _openN._danjiIdx = idx;
+        $$(".danji-tab").forEach((b) => b.classList.toggle("active", +b.dataset.danji === idx));
+        const panel = $("#danjiPanel");
+        if (panel) panel.innerHTML = lhDanjiPanel(_openN, _openN._danjis, idx);
+        const addr = (_openN._danjis[idx] || {}).address || mapAddr(_openN);
+        if (addr && $("#mdMap")) initMap("mdMap", addr).then((st) => { if (st === "nokey") { const w = $("#mdMapWrap"); if (w) w.remove(); } });
+        return;
+      }
       const fav = e.target.closest("[data-fav]");
       if (fav) { e.preventDefault(); e.stopPropagation(); toggleFav(fav.dataset.fav); render(); return; }
       const btn = e.target.closest("[data-detail]");
